@@ -1,93 +1,70 @@
-# Gharpayy Leads CRM — MVP
+Gharpayy Leads CRM
 
-A lead-management CRM for PG/rental operators: Kanban pipeline, search + filters,
-timestamped notes, one-click WhatsApp outreach, and an automated HOT/WARM/COLD
-intent score. React + Vite + TypeScript on the frontend, Supabase (Postgres) as
-the backend.
+A lightweight, production-style Lead Management CRM built for PG/rental property operators — track every enquiry from first click to booked tenant, with a live Kanban pipeline, smart lead scoring, and one-tap WhatsApp outreach.
 
-I built and type-checked this locally (`tsc --noEmit` and `npm run build` both
-pass), but **I cannot create your Supabase project or deploy to Vercel/Netlify
-myself** — those steps need your accounts and credentials. Everything below is
-copy-pasteable; it should take close to the 15/45/40/20-minute blueprint you laid out.
+Live app: https://gharpayy-crm-assignment.vercel.app
 
-## 1. Backend — Supabase (~15 min)
+Features
+Core CRM
+Kanban Pipeline — move leads through New → Contacted → Visit Scheduled → Booked → Lost. Every status change writes straight to the database and syncs in real time across every open tab/device.
+Search & Multi-Filter — instantly find leads by name or phone, and narrow the pipeline by status or preferred location.
+Interaction Notes & Call Logs — every lead has a timestamped activity thread, so nothing said on a call or visit gets lost.
+Growth Features
+Automated Lead Intent Scoring — leads are automatically tagged HOT / WARM / COLD based on budget, move-in urgency, visit status, and recency of activity — so operators always know who to call first.
+One-Click WhatsApp Outreach — every lead card has a pre-filled WhatsApp message ready to send in one tap, cutting response time from minutes to seconds.
+Tech Stack
+Layer	Technology
+Frontend	React + TypeScript + Vite
+Backend / Database	Supabase (Postgres)
+Realtime sync	Supabase Realtime
+Hosting	Vercel
+Styling	Custom CSS (design tokens, no framework)
+Architecture
+┌─────────────┐      ┌──────────────────┐      ┌────────────────┐
+│   Browser   │◄────►│  React + Vite app │◄────►│ Supabase (DB)  │
+│  (any user) │      │   (Vercel-hosted) │      │  Postgres +    │
+└─────────────┘      └──────────────────┘      │  Realtime +    │
+                                                 │  Row-Level Sec │
+                                                 └────────────────┘
 
-1. Go to [supabase.com](https://supabase.com) → New project.
-2. Once it's up, open **SQL Editor → New query**, paste the contents of
-   [`supabase/schema.sql`](./supabase/schema.sql), and run it. This creates the
-   `leads` table (with a `status` check constraint, notes as `jsonb`, an
-   auto-updating `last_activity_at` trigger for the intent score, RLS policies,
-   realtime enabled, and 5 seed rows).
-3. Go to **Project Settings → API** and copy the **Project URL** and
-   **anon public key**.
+Leads live in a single Postgres table (leads) with a jsonb notes column for activity history. Row Level Security is enabled so auth can be layered in later without a schema change. Realtime subscriptions push any change (status update, new note, new lead) to every connected client instantly.
 
-## 2. Frontend — run it locally
-
-```bash
-cd gharpayy-crm
+Getting Started
+1. Clone and install
+bash
+git clone https://github.com/vijay2023V/gharpayy-leads-crm.git
+cd gharpayy-leads-crm
 npm install
+2. Set up the database
+Create a project at supabase.com
+Open SQL Editor → paste in supabase/schema.sql → Run
+Copy your Project URL and anon public key from Project Settings → API
+3. Configure environment variables
+bash
 cp .env.example .env
-# paste your Supabase URL + anon key into .env
+env
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-public-key
+4. Run it
+bash
 npm run dev
-```
 
-Open the printed localhost URL. If `.env` isn't set, the app still renders with
-a clear "Supabase isn't connected yet" banner instead of a blank screen.
+Open the printed localhost URL.
 
-## 3. What's implemented
+Deployment
 
-**Core (from the blueprint's step 2):**
-- **Kanban pipeline** — `New → Contacted → Visit Scheduled → Booked → Lost`,
-  click any status chip in a lead's detail view to move it; writes straight to
-  Supabase and re-syncs via realtime so every open tab stays in sync.
-- **Search & multi-filter** — top search by name/phone, plus status and
-  preferred-location dropdown filters, all client-side over the live dataset.
-- **Notes & call logs** — every lead has a notes thread (`jsonb` array),
-  each entry timestamped, rendered newest-first in the detail modal.
+Deployed on Vercel with automatic redeploys on every push to main:
 
-**Growth features (step 3):**
-- **One-click WhatsApp** — every card and the detail modal have a
-  `wa.me/<phone>?text=<prefilled message>` link using the exact template you
-  specified (`src/lib/scoring.ts` → `whatsappMessage`).
-- **HOT 🔥 / WARM ⚡ / COLD ❄️ intent score** — computed live in
-  `src/lib/scoring.ts` from budget, move-in date, visit status, and days since
-  last activity, exactly per your rules. It's derived on the client from live
-  data rather than stored, so it's always current — no separate write path
-  that can drift out of sync.
+Import the repo at vercel.com → framework preset Vite
+Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY under Environment Variables
+Deploy
+Security Notes
 
-## 4. Deploy (~20 min) — steps that need your accounts
+The current schema uses permissive Row Level Security policies so the MVP works out of the box with just the public anon key. Before real customer data goes live long-term, the next step is adding Supabase Auth and scoping RLS policies to authenticated operators (and optionally per-agent row ownership).
 
-I can't push to your GitHub or click through Vercel/Netlify's UI for you, but here's
-the exact path:
-
-1. `git init && git add -A && git commit -m "Gharpayy leads CRM MVP"` in this
-   folder, then push it to a new GitHub repo (or add it as a directory in your
-   existing `techblr-gharpayy` repo if you'd rather keep one codebase).
-2. Go to [vercel.com](https://vercel.com) (or Netlify) → **New Project** →
-   import that repo. Framework preset: **Vite**.
-3. In the project's **Environment Variables** settings, add:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-4. Deploy. Vercel/Netlify give you a live `https://...vercel.app` (or
-   `.netlify.app`) URL immediately, plus a preview URL on every future push.
-5. Open that URL on your phone to confirm it loads and the WhatsApp buttons
-   deep-link correctly on mobile.
-
-## 5. Security note (read before real leads touch this)
-
-`supabase/schema.sql` uses permissive RLS policies (`using (true)`) so the MVP
-works immediately with just the anon key — anyone with the anon key can read
-and write all leads. That's fine for a demo/internal MVP behind a private URL,
-but before real customer data goes in, add Supabase Auth and scope the
-policies to authenticated operators (e.g. `using (auth.role() = 'authenticated')`,
-or per-agent row ownership if you want to restrict who sees what).
-
-## 6. Where this can grow next
-
-- Swap the intent-score thresholds for something tuned on real conversion data.
-- Add an `agents` table + assignment, mirroring the `assignedAgentName` field
-  already present in your existing `referral-app` mock schema.
-- Pull this straight into `techblr-gharpayy`'s existing TanStack Start /
-  Cloudflare Worker setup instead of a separate Vite app, and point
-  `referral-app/api/index.ts`'s `useAdminGetLeads` at these same Supabase
-  tables so the existing UI (admin/leads.tsx, LeadModal.tsx) works unmodified.
+Roadmap
+ Operator authentication + role-based access
+ Agent assignment & ownership per lead
+ Tunable intent-scoring weights based on real conversion data
+ Notification/reminder system for stale leads
+ Analytics dashboard (conversion funnel by area/source)
