@@ -1,3 +1,4 @@
+import { supabase, supabaseConfigured } from "@/lib/supabaseClient";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,7 +53,7 @@ export function LeadCreateSheet({ open, onOpenChange }: { open: boolean; onOpenC
     setTouched({});
   };
 
-  const submit = () => {
+  const submit = async () => {
     setTouched({ name: true, phone: true, email: true });
     if (Object.keys(errors).length > 0) {
       toast.error("Fix the highlighted fields first");
@@ -68,6 +69,22 @@ export function LeadCreateSheet({ open, onOpenChange }: { open: boolean; onOpenC
       source: "Direct",
       status,
     });
+
+    if (supabaseConfigured) {
+      const { error } = await supabase.from("leads").insert({
+        name,
+        phone,
+        email: email || null,
+        budget: Number(budget || 0),
+        preferred_area: location,
+        source: "Direct",
+        status,
+      });
+      if (error) {
+        toast.error("Saved locally, but failed to sync to database");
+        console.error(error);
+      }
+    }
 
     toast.success("Lead added successfully");
     reset();
