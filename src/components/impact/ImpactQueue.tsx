@@ -207,7 +207,7 @@ export function ImpactQueue() {
       if (lead.stage === "booked") column = "booked";
       else if (lastQuote && (lastQuote.status === "sent" || lastQuote.status === "paid")) column = "quoted";
       else if (openTour && isToday(openTour.scheduledAt)) column = "onTour";
-      else if (openTour) column = "scheduled";
+      else if (openTour || lead.stage === "tour-scheduled") column = "scheduled";
 
       const nba = computeNBA(lead, openTour, lastQuote);
       const { score } = scoreLead(lead, openTour, lastQuote);
