@@ -8,6 +8,7 @@ import { useDossierReadiness } from "@/lib/crm10x/dossier-readiness";
 import { useCheckins, DELAY_REASONS, STAGE_LABEL, riskLevel, RISK_CLASS, RISK_LABEL, type DelayReason, type CheckIn } from "@/lib/checkins/store";
 import { waBookingConfirm, waDateConfirm, waRescheduleCheckIn, waTokenRequest } from "@/lib/checkins/templates";
 import { useSnoozes } from "@/lib/impact/snoozes";
+import { calculateLeadTemperature } from "@/lib/engine";
 import type { Lead, Property, TCM, Tour } from "@/lib/types";
 import {
   IMPACT_TEMPLATES, renderImpactTemplate, impactWaLink,
@@ -46,10 +47,11 @@ import { toast } from "sonner";
 import { useMountedNow } from "@/hooks/use-now";
 import { CopyChip } from "@/components/atc/CopyChip";
 import { leadsBlock, toursBlock } from "@/lib/impact/copy-formats";
+import { LeadCreateSheet } from "@/components/leads/LeadCreateSheet";
 
 /* ================================================================== */
-/*  Impact Queue — 10x                                                 */
-/*  Priority Stack + Stage Board · Live counters · NBA per card        */
+/*  Impact Queue — 10x                                                */
+/*  Priority Stack + Stage Board · Live counters · NBA per card       */
 /*  Multi-variant templates · Negotiation playbook · Direct book       */
 /* ================================================================== */
 
@@ -177,17 +179,20 @@ export function ImpactQueue() {
     nba: NextBestAction;
     score: number;
     column: ColumnKey;
+    temperature: ReturnType<typeof calculateLeadTemperature>;
   };
 
   const enriched: Enriched[] = useMemo(() => {
     const nowMs = Date.now();
-    const tFilter = (lead: Lead) =>
-      (tcmFilter === "all" || lead.assignedTcmId === tcmFilter) &&
-      (intent === "all" || lead.intent === intent) &&
-      (!snoozeUntil[lead.id] || +new Date(snoozeUntil[lead.id]) <= nowMs) &&
-      (!query.trim() ||
-        lead.name.toLowerCase().includes(query.toLowerCase()) ||
-        lead.phone.includes(query));
+    const tFilter = (lead: Lead) => {
+      const temperature = calculateLeadTemperature(lead, tours, nowMs);
+      return (tcmFilter === "all" || lead.assignedTcmId === tcmFilter) &&
+        (intent === "all" || temperature === intent) &&
+        (!snoozeUntil[lead.id] || +new Date(snoozeUntil[lead.id]) <= nowMs) &&
+        (!query.trim() ||
+          lead.name.toLowerCase().includes(query.toLowerCase()) ||
+          lead.phone.includes(query));
+    };
 
     return leads.filter(tFilter).map((lead) => {
       const ts = tours
@@ -206,7 +211,8 @@ export function ImpactQueue() {
 
       const nba = computeNBA(lead, openTour, lastQuote);
       const { score } = scoreLead(lead, openTour, lastQuote);
-      return { lead, openTour, lastQuote, nba, score, column };
+      const temperature = calculateLeadTemperature(lead, tours, nowMs);
+      return { lead, openTour, lastQuote, nba, score, column, temperature };
     });
   }, [leads, tours, quotes, tcmFilter, query, intent, snoozeUntil]);
 
@@ -438,7 +444,7 @@ export function ImpactQueue() {
 }
 
 /* ================================================================== */
-/*  Atoms                                                              */
+/*  Atoms                                                             */
 /* ================================================================== */
 
 function Counter({
@@ -482,7 +488,7 @@ function Chip({
 }
 
 /* ================================================================== */
-/*  Lead row — collapses to summary, expands to Command Mode           */
+/*  Lead row — collapses to summary, expands to Command Mode            */
 /* ================================================================== */
 
 type EnrichedLite = {
@@ -496,7 +502,13 @@ function LeadRow({
   enriched: EnrichedLite; rank?: number; tcms: TCM[]; properties: Property[]; compact?: boolean;
 }) {
   const { lead, openTour, lastQuote, nba, column } = enriched;
+  const tours = useApp((s) => s.tours);
   const selectLead = useApp((s) => s.selectLead);
+  const openWhatsApp = () => {
+    const phoneDigits = lead.phone.replace(/\D/g, "");
+    const message = `Hi ${lead.name}, thanks for connecting with Gharpayy! We have great PG options matching your budget.`;
+    window.open(`https://wa.me/91${phoneDigits}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+  };
   const openDrawer = () => selectLead(lead.id, "impact");
   const tcm = tcms.find((t) => t.id === lead.assignedTcmId);
   const property = openTour ? properties.find((p) => p.id === openTour.propertyId) : undefined;
@@ -531,7 +543,7 @@ function LeadRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-xs font-semibold truncate">{lead.name}</span>
-            <Badge variant="outline" className={`text-[9px] uppercase ${intentChip(lead.intent)}`}>{lead.intent}</Badge>
+            <Badge variant="outline" className={`text-[9px] uppercase ${intentChip(calculateLeadTemperature(lead, tours, Date.now()))}`}>{calculateLeadTemperature(lead, tours, Date.now())}</Badge>
             {!compact && (
               <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
                 <colMeta.icon className="h-2.5 w-2.5" /> {colMeta.label}
@@ -570,6 +582,13 @@ function LeadRow({
           </div>
         </div>
         <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={(e) => { e.stopPropagation(); openWhatsApp(); }}
+            title="Open WhatsApp"
+            className="h-6 w-6 rounded border border-emerald-600/40 bg-emerald-600/10 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-colors flex items-center justify-center"
+          >
+            <MessageSquare className="h-3 w-3" />
+          </button>
           <CopyChip
             size="xs"
             iconOnly
@@ -623,6 +642,7 @@ function LeadDrawer({
   property?: Property;
 }) {
   const { lead, openTour, lastQuote, nba, column } = enriched;
+  const tours = useApp((s) => s.tours);
   const colMeta = COLUMNS.find((c) => c.key === column)!;
   const [now, mounted] = useMountedNow(30_000);
 
@@ -637,7 +657,7 @@ function LeadDrawer({
           <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/60 to-transparent" />
           <div className="flex items-center gap-2 flex-wrap">
             <SheetTitle className="text-base font-display">{lead.name}</SheetTitle>
-            <Badge variant="outline" className={`text-[9px] uppercase ${intentChip(lead.intent)}`}>{lead.intent}</Badge>
+            <Badge variant="outline" className={`text-[9px] uppercase ${intentChip(calculateLeadTemperature(lead, tours, Date.now()))}`}>{calculateLeadTemperature(lead, tours, Date.now())}</Badge>
             <Badge variant="outline" className="text-[9px] uppercase gap-1">
               <colMeta.icon className="h-2.5 w-2.5" /> {colMeta.label}
             </Badge>
@@ -698,7 +718,7 @@ function LeadDrawer({
 }
 
 /* ================================================================== */
-/*  Command Actions — the full toolbelt for a single lead              */
+/*  Command Actions — the full toolbelt for a single lead             */
 /* ================================================================== */
 
 export function CommandActions({
@@ -1008,120 +1028,19 @@ function NegotiationPlaybook({
 }
 
 /* ================================================================== */
-/*  Quick Add Lead                                                     */
+/*  Quick Add Lead                                                    */
 /* ================================================================== */
 
 function QuickAddLead({ defaultTcmId }: { defaultTcmId: string }) {
-  const tcms = useApp((s) => s.tcms);
-  const addLead = useApp((s) => s.addLead);
-  const autoAssignLead = useApp((s) => s.autoAssignLead);
-
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [area, setArea] = useState("");
-  const [budget, setBudget] = useState(12000);
-  const [moveIn, setMoveIn] = useState(todayISO());
-  const [intent, setIntent] = useState<Lead["intent"]>("warm");
-  const [tcmId, setTcmId] = useState<string>(defaultTcmId);
-  const [autoRoute, setAutoRoute] = useState(true);
-
-  const reset = () => {
-    setName(""); setPhone(""); setArea(""); setBudget(12000);
-    setMoveIn(todayISO()); setIntent("warm"); setTcmId(defaultTcmId); setAutoRoute(true);
-  };
-
-  const submit = () => {
-    if (!name.trim() || !phone.trim()) return toast.error("Name + phone required");
-    if (!area.trim()) return toast.error("Preferred area required");
-    const lead = addLead({
-      name, phone, preferredArea: area, budget,
-      moveInDate: new Date(moveIn).toISOString(),
-      intent, assignedTcmId: autoRoute ? undefined : tcmId,
-    });
-    if (autoRoute) autoAssignLead(lead.id);
-    toast.success(`Lead added · ${lead.name}`);
-    reset(); setOpen(false);
-  };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) reset(); }}>
-      <DialogTrigger asChild>
-        <Button size="sm" className="h-8 text-xs gap-1">
-          <Plus className="h-3 w-3" /> Add lead
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="text-sm">Add lead → Impact Queue</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Name">
-              <Input className="h-8 text-xs" value={name} onChange={(e) => setName(e.target.value)} />
-            </Field>
-            <Field label="Phone">
-              <Input className="h-8 text-xs" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 9xxxxxxxxx" />
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Preferred area">
-              <Input className="h-8 text-xs" value={area} onChange={(e) => setArea(e.target.value)} />
-            </Field>
-            <Field label="Budget (₹/mo)">
-              <Input className="h-8 text-xs" type="number" value={budget} onChange={(e) => setBudget(Number(e.target.value))} />
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Move-in by">
-              <Input className="h-8 text-xs" type="date" value={moveIn} onChange={(e) => setMoveIn(e.target.value)} />
-            </Field>
-            <Field label="Intent">
-              <Select value={intent} onValueChange={(v) => setIntent(v as Lead["intent"])}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="hot" className="text-xs">Hot</SelectItem>
-                  <SelectItem value="warm" className="text-xs">Warm</SelectItem>
-                  <SelectItem value="cold" className="text-xs">Cold</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <Label className="text-[10px] uppercase text-muted-foreground">Assign</Label>
-              <button
-                onClick={() => setAutoRoute((v) => !v)}
-                className={`text-[10px] px-2 py-0.5 rounded-full border ${autoRoute ? "bg-accent text-accent-foreground border-accent" : "border-border text-muted-foreground"}`}>
-                {autoRoute ? "Auto-route ON" : "Auto-route OFF"}
-              </button>
-            </div>
-            {!autoRoute && (
-              <Select value={tcmId} onValueChange={setTcmId}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {tcms.map((t) => (
-                    <SelectItem key={t.id} value={t.id} className="text-xs">
-                      {t.name} · {t.zone} · {Math.round(t.conversionRate * 100)}%
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {autoRoute && (
-              <p className="text-[10px] text-muted-foreground">
-                System will pick the best TCM by zone, load, conversion rate & response speed.
-              </p>
-            )}
-          </div>
-
-          <Button className="w-full h-8 text-xs" onClick={submit}>
-            Add to queue
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Button size="sm" className="h-8 text-xs gap-1" onClick={() => setOpen(true)}>
+        <Plus className="h-3 w-3" /> Add lead
+      </Button>
+      <LeadCreateSheet open={open} onOpenChange={setOpen} />
+    </>
   );
 }
 
@@ -1135,13 +1054,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 /* ================================================================== */
-/*  Schedule Tour                                                      */
+/*  Schedule Tour                                                     */
 /* ================================================================== */
 
 function ScheduleTourDialog({ lead }: { lead: Lead }) {
   const properties = useApp((s) => s.properties);
   const tcms = useApp((s) => s.tcms);
   const scheduleTour = useApp((s) => s.scheduleTour);
+  const setLeadStage = useApp((s) => s.setLeadStage);
   const addProperty = useApp((s) => s.addProperty);
 
   const focus = useLeadFocus(lead);
@@ -1194,6 +1114,7 @@ function ScheduleTourDialog({ lead }: { lead: Lead }) {
     }
     const iso = new Date(`${date}T${time}:00`).toISOString();
     scheduleTour({ leadId: lead.id, propertyId: propId, tcmId, scheduledAt: iso });
+    setLeadStage(lead.id, "tour-scheduled");
     toast.success("Tour scheduled");
     setOpen(false);
   };
@@ -1379,7 +1300,7 @@ function ReminderRow({ tour }: { tour: Tour }) {
 }
 
 /* ================================================================== */
-/*  Quotation dialog                                                   */
+/*  Quotation dialog                                                  */
 /* ================================================================== */
 
 function QuotationDialog({
@@ -1402,7 +1323,7 @@ function QuotationDialog({
 }
 
 /* ================================================================== */
-/*  Booking dialog (from quote) + Direct book                          */
+/*  Booking dialog (from quote) + Direct book                         */
 /* ================================================================== */
 
 function BookingDialog({
@@ -1714,6 +1635,7 @@ function CheckInAuditReport({ checkin, lead, compact = false }: { checkin: Check
 function AuditMetric({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
   return <div className={`rounded border p-1.5 ${danger ? "border-danger/40 bg-danger/5 text-danger" : "border-border bg-muted/20"}`}><div className="text-muted-foreground">{label}</div><div className="font-semibold truncate">{value}</div></div>;
 }
+
 /* ================================================================== */
 /*  Focus Inventory Strip — what each TCM is pushing TODAY             */
 /* ================================================================== */
@@ -1727,7 +1649,6 @@ function FocusInventoryStrip({ tcmFilter }: { tcmFilter: string }) {
   const activeTcm =
     tcmFilter !== "all" ? tcms.find((t) => t.id === tcmFilter) : undefined;
 
-  // If a single TCM is selected, show only their focus; else show all TCMs' focus.
   const rows = useMemo(() => {
     const list = activeTcm ? [activeTcm] : tcms;
     return list.map((t) => {
@@ -1960,7 +1881,7 @@ function ManageFocusDialog({
 }
 
 /* ================================================================== */
-/*  Message Lab — preview every template variant, copy/send each       */
+/*  Message Lab — preview every template variant, copy/send each        */
 /* ================================================================== */
 
 function MessageLabButton({ tcms }: { tcms: TCM[] }) {

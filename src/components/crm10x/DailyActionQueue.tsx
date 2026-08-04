@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { waLink } from "@/lib/impact/copy-formats";
+import { calculateLeadTemperature } from "@/lib/engine";
 
 /**
  * Mandatory Daily Action Queue.
@@ -202,7 +203,7 @@ export function DailyActionQueue() {
                           <span className="text-[10px] font-mono text-muted-foreground">
                             score {Math.round(a.score)}
                           </span>
-                          {lead.intent === "hot" && (
+                          {calculateLeadTemperature(lead, tours, now) === "hot" && (
                             <Badge className="bg-destructive/15 text-destructive text-[10px]">HOT</Badge>
                           )}
                         </div>

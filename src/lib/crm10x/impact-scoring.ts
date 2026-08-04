@@ -9,6 +9,7 @@
  */
 import type { Lead, Tour } from "@/lib/types";
 import type { Quotation } from "@/lib/crm10x/quotations";
+import { calculateLeadTemperature, liveConfidence } from "@/lib/engine";
 
 export type Pressure = "normal" | "watch" | "escalate";
 export type NBAVerb =
@@ -53,13 +54,16 @@ export function scoreLead(
   let s = 0;
   const r: string[] = [];
 
+  const temperature = calculateLeadTemperature(lead, openTour ? [openTour] : [], Date.now());
+  const dynamicConfidence = liveConfidence(lead, openTour ? [openTour] : [], Date.now());
+
   // Intent
-  if (lead.intent === "hot") { s += 50; r.push("HOT"); }
-  else if (lead.intent === "warm") { s += 20; r.push("warm"); }
+  if (temperature === "hot") { s += 50; r.push("HOT"); }
+  else if (temperature === "warm") { s += 20; r.push("warm"); }
   else { s += 5; r.push("cold"); }
 
   // Confidence baseline
-  s += Math.round(lead.confidence * 0.4);
+  s += Math.round(dynamicConfidence * 0.4);
 
   // Stage urgency
   if (lead.stage === "negotiation") { s += 25; r.push("negotiating"); }
@@ -88,7 +92,7 @@ export function scoreLead(
 
   // Idle penalty / reward
   const idle = minutesSince(lead.updatedAt);
-  if (idle > 60 * 24 && lead.intent === "hot") { s += 25; r.push("hot & idle 24h"); }
+  if (idle > 60 * 24 && temperature === "hot") { s += 25; r.push("hot & idle 24h"); }
   else if (idle > 60 * 72) { s += 8; r.push("idle 3d"); }
 
   return { score: s, reasons: r };
@@ -168,7 +172,8 @@ export function computeNBA(
 
   if (lead.stage === "new" || lead.stage === "contacted") {
     const idleH = minutesSince(lead.updatedAt) / 60;
-    if (lead.intent === "hot" && idleH > 0.25) {
+    const temperature = calculateLeadTemperature(lead, openTour ? [openTour] : [], Date.now());
+    if (temperature === "hot" && idleH > 0.25) {
       return {
         verb: "call", label: "Call HOT lead now",
         reason: `Untouched for ${Math.round(idleH * 60)}m — HOT lead window`,
@@ -177,8 +182,8 @@ export function computeNBA(
     }
     return {
       verb: "schedule", label: "Schedule tour",
-      reason: lead.intent === "hot" ? "HOT lead with no tour yet" : "Lock a visit slot",
-      pressure: lead.intent === "hot" ? "watch" : "normal",
+      reason: temperature === "hot" ? "HOT lead with no tour yet" : "Lock a visit slot",
+      pressure: temperature === "hot" ? "watch" : "normal",
       ageMinutes: idleH * 60,
     };
   }

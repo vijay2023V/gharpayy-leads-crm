@@ -1,10 +1,11 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type {
   ActivityLog, FollowUp, Lead, Property, Role, TCM, Tour,
   PostTourUpdate, ClientDecision, LeadStage, Intent,
   HandoffMessage, ActiveSequence, SequenceKind, Booking,
 } from "./types";
-import { ACTIVITIES, FOLLOWUPS, LEADS, PROPERTIES, TCMS, TOURS, HANDOFFS, SEQUENCES_INIT } from "./mock-data";
+import { ACTIVITIES, FOLLOWUPS, PROPERTIES, TCMS, TOURS, HANDOFFS, SEQUENCES_INIT } from "./mock-data";
 import { autoAssign as autoAssignFn } from "./routing";
 import { pushObjectionToOwner, pushTourViewToOwner } from "@/owner/team-bridge";
 import { emit as emitConnector } from "./connectors";
@@ -70,6 +71,7 @@ interface AppState {
   addLead: (input: {
     name: string;
     phone: string;
+    email?: string;
     source?: string;
     budget: number;
     preferredArea: string;
@@ -77,13 +79,16 @@ interface AppState {
     intent?: Intent;
     assignedTcmId?: string;
     tags?: string[];
+    status?: LeadStage;
   }) => Lead;
 }
 
-export const useApp = create<AppState>((set, get) => ({
-  role: "flow-ops",
-  currentTcmId: "tcm-1",
-  setRole: (r) => set({ role: r }),
+export const useApp = create<AppState>()(
+  persist(
+    (set, get) => ({
+      role: "flow-ops",
+      currentTcmId: "tcm-1",
+      setRole: (r) => set({ role: r }),
   setCurrentTcmId: (id) => set({ currentTcmId: id }),
 
   selectedLeadId: null,
@@ -92,7 +97,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   tcms: TCMS,
   properties: PROPERTIES,
-  leads: LEADS,
+  leads: [],
   tours: TOURS,
   activities: ACTIVITIES,
   followUps: FOLLOWUPS,
@@ -490,7 +495,7 @@ export const useApp = create<AppState>((set, get) => ({
         {
           ...input,
           id: "tmp",
-          stage: "new",
+          stage: input.status ?? "new",
           intent: input.intent ?? "warm",
           assignedTcmId: "",
           confidence: 50,
@@ -510,12 +515,13 @@ export const useApp = create<AppState>((set, get) => ({
       id: uid("l"),
       name: input.name.trim(),
       phone: input.phone.trim(),
+      email: input.email?.trim() || undefined,
       source: input.source ?? "Direct",
       budget: input.budget,
       moveInDate: input.moveInDate ?? nowIso,
       preferredArea: input.preferredArea,
       assignedTcmId: tcmId,
-      stage: "new",
+      stage: input.status ?? "new",
       intent: input.intent ?? "warm",
       confidence: input.intent === "hot" ? 70 : input.intent === "cold" ? 25 : 50,
       tags: input.tags ?? [],
@@ -531,7 +537,25 @@ export const useApp = create<AppState>((set, get) => ({
     });
     return lead;
   },
-}));
+  }),
+  {
+    name: "gharpayy-app-store",
+    storage: createJSONStorage(() => (typeof window !== "undefined" ? window.localStorage : undefined as never)),
+    partialize: (state) => ({
+      role: state.role,
+      currentTcmId: state.currentTcmId,
+      tcms: state.tcms,
+      properties: state.properties,
+      leads: state.leads,
+      tours: state.tours,
+      activities: state.activities,
+      followUps: state.followUps,
+      handoffs: state.handoffs,
+      sequences: state.sequences,
+      bookings: state.bookings,
+    }),
+  },
+));
 
 function pushActivity(
   set: (fn: (s: AppState) => Partial<AppState>) => void,

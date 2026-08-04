@@ -4,7 +4,7 @@ import { Phone, MessageSquare, ClipboardCheck, ChevronRight } from "lucide-react
 import { ConfidenceBar, IntentChip, StageBadge } from "./atoms";
 import { toast } from "sonner";
 import type { Lead } from "@/lib/types";
-import { liveConfidence, intentFor } from "@/lib/engine";
+import { calculateLeadTemperature, liveConfidence } from "@/lib/engine";
 import { useMountedNow } from "@/hooks/use-now";
 
 /**
@@ -25,7 +25,7 @@ export function QuickActionRow({
   const tcm = tcms.find((t) => t.id === lead.assignedTcmId);
   // Use static lead values until mounted to avoid SSR mismatch
   const live = mounted ? liveConfidence(lead, tours, now) : lead.confidence;
-  const liveIntent = mounted ? intentFor(live) : lead.intent;
+  const liveIntent = mounted ? calculateLeadTemperature(lead, tours, now) : lead.intent;
 
   const ring = {
     destructive: "border-l-destructive",

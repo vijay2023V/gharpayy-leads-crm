@@ -56,8 +56,25 @@ export function slaForFirstResponse(lead: Lead): SlaState {
  *  - +5 if response speed <= 5min
  *  - +8 if a tour is already completed
  */
+function budgetWeight(budget: number): number {
+  if (budget >= 35_000) return 18;
+  if (budget >= 25_000) return 12;
+  if (budget >= 15_000) return 7;
+  if (budget >= 8_000) return 3;
+  return -4;
+}
+
+function stageWeight(stage: Lead["stage"]): number {
+  if (stage === "booked") return 20;
+  if (stage === "negotiation") return 12;
+  if (stage === "tour-done") return 9;
+  if (stage === "tour-scheduled") return 6;
+  if (stage === "contacted") return 4;
+  return 0;
+}
+
 export function liveConfidence(lead: Lead, tours: Tour[], now: number): number {
-  let s = lead.confidence;
+  let s = lead.confidence + budgetWeight(lead.budget) + stageWeight(lead.stage);
   const silentHrs = (now - +new Date(lead.updatedAt)) / 36e5;
   if (silentHrs > 6) s -= Math.min(20, Math.floor(silentHrs - 6));
   if (!lead.nextFollowUpAt) s -= 5;
@@ -81,6 +98,14 @@ export function intentFor(confidence: number): Intent {
   if (confidence >= 75) return "hot";
   if (confidence >= 50) return "warm";
   return "cold";
+}
+
+/**
+ * Shared lead temperature resolver used across Today, queue, and impact views.
+ * Any screen that needs a HOT/WARM/COLD badge should derive it from this helper.
+ */
+export function calculateLeadTemperature(lead: Lead, tours: Tour[] = [], now: number = Date.now()): Intent {
+  return intentFor(liveConfidence(lead, tours, now));
 }
 
 /* ============== SMART "DO NEXT" QUEUE ============== */
@@ -133,11 +158,12 @@ export function buildDoNextQueue(
       const lead = leads.find((l) => l.id === f.leadId);
       if (!lead || !byLead(lead)) return;
       const hrs = (now - +new Date(f.dueAt)) / 36e5;
+      const temperature = calculateLeadTemperature(lead, tours, now);
       actions.push({
         leadId: lead.id,
         reason: `Follow-up overdue · ${f.reason}`,
         kind: "follow-up-overdue",
-        score: 800 + Math.min(150, hrs * 2) + intentBoost(lead.intent),
+        score: 800 + Math.min(150, hrs * 2) + intentBoost(temperature),
         dueAt: f.dueAt,
       });
     });
@@ -149,13 +175,14 @@ export function buildDoNextQueue(
       const lead = leads.find((l) => l.id === t.leadId);
       if (!lead || !byLead(lead)) return;
       const minsToTour = (+new Date(t.scheduledAt) - now) / 60_000;
+      const temperature = calculateLeadTemperature(lead, tours, now);
       actions.push({
         leadId: lead.id,
         reason: minsToTour > 0
           ? `Tour today in ${formatRel(minsToTour)}`
           : `Tour was ${formatRel(-minsToTour)} ago — confirm`,
         kind: "tour-today",
-        score: 700 + intentBoost(lead.intent) - Math.abs(minsToTour) / 30,
+        score: 700 + intentBoost(temperature) - Math.abs(minsToTour) / 30,
         dueAt: t.scheduledAt,
       });
     });
@@ -166,11 +193,12 @@ export function buildDoNextQueue(
     .forEach((f) => {
       const lead = leads.find((l) => l.id === f.leadId);
       if (!lead || !byLead(lead)) return;
+      const temperature = calculateLeadTemperature(lead, tours, now);
       actions.push({
         leadId: lead.id,
         reason: `Follow-up today · ${f.reason}`,
         kind: "follow-up-today",
-        score: 500 + intentBoost(lead.intent),
+        score: 500 + intentBoost(temperature),
         dueAt: f.dueAt,
       });
     });
@@ -179,11 +207,12 @@ export function buildDoNextQueue(
   leads
     .filter((l) => byLead(l) && !l.nextFollowUpAt && l.stage !== "booked" && l.stage !== "dropped")
     .forEach((l) => {
+      const temperature = calculateLeadTemperature(l, tours, now);
       actions.push({
         leadId: l.id,
         reason: `No follow-up set · SLA breach`,
         kind: "no-follow-up",
-        score: 600 + intentBoost(l.intent),
+        score: 600 + intentBoost(temperature),
       });
     });
 

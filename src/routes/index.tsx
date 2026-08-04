@@ -6,7 +6,7 @@ import { format } from "date-fns";
 import { AlertTriangle, ArrowUpRight, CalendarPlus, Flame, Building2, Zap, Sun, TrendingUp, Sparkles, IndianRupee } from "lucide-react";
 import { useMemo } from "react";
 import { useMountedNow } from "@/hooks/use-now";
-import { buildDoNextQueue, liveConfidence, intentFor } from "@/lib/engine";
+import { buildDoNextQueue, liveConfidence, calculateLeadTemperature } from "@/lib/engine";
 import { scanRevivals } from "@/lib/revival";
 import { QuickActionRow } from "@/components/QuickActionRow";
 
@@ -37,7 +37,11 @@ function DashboardPage() {
 
   // Live, decayed view of every lead
   const liveLeads = useMemo(
-    () => leads.map((l) => ({ ...l, confidence: liveConfidence(l, tours, now), intent: intentFor(liveConfidence(l, tours, now)) })),
+    () => leads.map((l) => ({
+      ...l,
+      confidence: liveConfidence(l, tours, now),
+      intent: calculateLeadTemperature(l, tours, now),
+    })),
     [leads, tours, now],
   );
   const hotLeads = liveLeads.filter((l) => l.intent === "hot" && l.stage !== "booked" && l.stage !== "dropped");

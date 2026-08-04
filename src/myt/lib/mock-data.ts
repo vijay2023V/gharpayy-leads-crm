@@ -159,34 +159,8 @@ export const tours: Tour[] = Array.from({ length: 80 }, (_, i) => {
   };
 });
 
-// Mock leads
-export const initialLeads: Lead[] = Array.from({ length: 25 }, (_, i) => {
-  const flowOps = teamMembers.filter(m => m.role === 'flow-ops');
-  const agent = flowOps[i % flowOps.length];
-  const area = zones[i % zones.length].area;
-  const budget = 5000 + (i % 15) * 1000;
-  const moveIn = new Date();
-  moveIn.setDate(moveIn.getDate() + (i % 20));
-  const dateConfirmed = i % 3 !== 2;
-  const areaCovered = zones.some(z => z.area === area);
-  const mytQualified = areaCovered && budget >= 7000 && (moveIn.getTime() - Date.now()) / (1000*60*60*24) <= 15 && dateConfirmed;
-
-  return {
-    id: `l${i + 1}`,
-    name: leadNames[(i + 40) % leadNames.length],
-    phone: `+91 ${9600000000 + i}`,
-    area,
-    budget,
-    moveInDate: moveIn.toISOString().split('T')[0],
-    dateConfirmed,
-    status: mytQualified ? (i % 4 === 0 ? 'tour-scheduled' : 'qualified') : (i % 5 === 0 ? 'dead' : 'contacted'),
-    mytQualified,
-    addedBy: agent.id,
-    addedByName: agent.name,
-    createdAt: randomDate(7),
-    notes: mytQualified ? 'MYT qualified — ready for tour' : 'Needs follow-up',
-  };
-});
+// Fresh sessions should start empty; lead data is created in the live app flow.
+export const initialLeads: Lead[] = [];
 
 // Mock bookings
 export const initialBookings: Booking[] = Array.from({ length: 12 }, (_, i) => {
