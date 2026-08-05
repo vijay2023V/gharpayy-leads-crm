@@ -6,4 +6,7 @@
 // You can pass additional config via defineConfig({ vite: { ... } }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
-export default defineConfig();
+// nitro is disabled because this app's entry (src/main.tsx) is a plain client-rendered
+// React SPA, not a TanStack Start SSR app — the default nitro build targets Cloudflare
+// Workers, which Netlify can't serve as a static site.
+export default defineConfig({ nitro: false });
